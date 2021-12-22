@@ -29,7 +29,8 @@ In its most basic form, a simple forwarder uses this syntax:
 forward FROM TO...
 ~~~
 
-* **FROM** is the base domain to match for the request to be forwarded.
+* **FROM** is the base domain to match for the request to be forwarded. Domains using CIDR notation
+  that expand to multiple reverse zones are not fully supported; only the first expanded zone is used.
 * **TO...** are the destination endpoints to forward to. The **TO** syntax allows you to specify
   a protocol, `tls://9.9.9.9` or `dns://` (or no protocol) for plain DNS. The number of upstreams is
   limited to 15.
@@ -78,7 +79,9 @@ forward FROM TO... {
 * `tls_servername` **NAME** allows you to set a server name in the TLS configuration; for instance 9.9.9.9
   needs this to be set to `dns.quad9.net`. Multiple upstreams are still allowed in this scenario,
   but they have to use the same `tls_servername`. E.g. mixing 9.9.9.9 (QuadDNS) with 1.1.1.1
-  (Cloudflare) will not work.
+  (Cloudflare) will not work. Using TLS forwarding but not setting `tls_servername` results in anyone
+  being able to man-in-the-middle your connection to the DNS server you are forwarding to. Because of this,
+  it is strongly recommended to set this value when using TLS forwarding.
 * `policy` specifies the policy to use for selecting upstream servers. The default is `random`.
   * `random` is a policy that implements random upstream selection.
   * `round_robin` is a policy that selects hosts based on round robin ordering.
@@ -100,6 +103,13 @@ On each endpoint, the timeouts for communication are set as follows:
 
 * The dial timeout by default is 30s, and can decrease automatically down to 100ms based on early results.
 * The read timeout is static at 2s.
+
+## Metadata
+
+The forward plugin will publish the following metadata, if the *metadata*
+plugin is also enabled:
+
+* `forward/upstream`: the upstream used to forward the request
 
 ## Metrics
 

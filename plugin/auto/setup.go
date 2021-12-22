@@ -1,6 +1,7 @@
 package auto
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -44,7 +45,9 @@ func setup(c *caddy.Controller) error {
 		if err != nil {
 			return err
 		}
-
+		if a.loader.ReloadInterval == 0 {
+			return nil
+		}
 		go func() {
 			ticker := time.NewTicker(a.loader.ReloadInterval)
 			for {
@@ -87,16 +90,8 @@ func autoParse(c *caddy.Controller) (Auto, error) {
 
 	for c.Next() {
 		// auto [ZONES...]
-		a.Zones.origins = make([]string, len(c.ServerBlockKeys))
-		copy(a.Zones.origins, c.ServerBlockKeys)
-
 		args := c.RemainingArgs()
-		if len(args) > 0 {
-			a.Zones.origins = args
-		}
-		for i := range a.Zones.origins {
-			a.Zones.origins[i] = plugin.Host(a.Zones.origins[i]).Normalize()
-		}
+		a.Zones.origins = plugin.OriginsFromArgsOrServerBlock(args, c.ServerBlockKeys)
 		a.loader.upstream = upstream.New()
 
 		for c.NextBlock() {
@@ -139,7 +134,14 @@ func autoParse(c *caddy.Controller) (Auto, error) {
 				}
 
 			case "reload":
-				d, err := time.ParseDuration(c.RemainingArgs()[0])
+				t := c.RemainingArgs()
+				if len(t) < 1 {
+					return a, errors.New("reload duration value is expected")
+				}
+				d, err := time.ParseDuration(t[0])
+				if d < 0 {
+					err = errors.New("invalid duration")
+				}
 				if err != nil {
 					return a, plugin.Error("file", err)
 				}

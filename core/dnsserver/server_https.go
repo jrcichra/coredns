@@ -39,12 +39,12 @@ func NewServerHTTPS(addr string, group []*Config) (*ServerHTTPS, error) {
 		// Should we error if some configs *don't* have TLS?
 		tlsConfig = conf.TLSConfig
 	}
-	if tlsConfig == nil {
-		return nil, fmt.Errorf("DoH requires TLS to be configured, see the tls plugin")
-	}
+
 	// http/2 is recommended when using DoH. We need to specify it in next protos
 	// or the upgrade won't happen.
-	tlsConfig.NextProtos = []string{"h2", "http/1.1"}
+	if tlsConfig != nil {
+		tlsConfig.NextProtos = []string{"h2", "http/1.1"}
+	}
 
 	// Use a custom request validation func or use the standard DoH path check.
 	var validator func(*http.Request) bool
@@ -140,7 +140,11 @@ func (s *ServerHTTPS) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Create a DoHWriter with the correct addresses in it.
 	h, p, _ := net.SplitHostPort(r.RemoteAddr)
 	port, _ := strconv.Atoi(p)
-	dw := &DoHWriter{laddr: s.listenAddr, raddr: &net.TCPAddr{IP: net.ParseIP(h), Port: port}}
+	dw := &DoHWriter{
+		laddr:   s.listenAddr,
+		raddr:   &net.TCPAddr{IP: net.ParseIP(h), Port: port},
+		request: r,
+	}
 
 	// We just call the normal chain handler - all error handling is done there.
 	// We should expect a packet to be returned that we can send to the client.

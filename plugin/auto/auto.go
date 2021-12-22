@@ -62,6 +62,11 @@ func (a Auto) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (i
 		return dns.RcodeServerFailure, nil
 	}
 
+	// If transfer is not loaded, we'll see these, answer with refused (no transfer allowed).
+	if state.QType() == dns.TypeAXFR || state.QType() == dns.TypeIXFR {
+		return dns.RcodeRefused, nil
+	}
+
 	answer, ns, extra, result := z.Lookup(ctx, state, qname)
 
 	m := new(dns.Msg)
@@ -77,7 +82,14 @@ func (a Auto) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg) (i
 	case file.Delegation:
 		m.Authoritative = false
 	case file.ServerFailure:
-		return dns.RcodeServerFailure, nil
+		// If the result is SERVFAIL and the answer is non-empty, then the SERVFAIL came from an
+		// external CNAME lookup and the answer contains the CNAME with no target record. We should
+		// write the CNAME record to the client instead of sending an empty SERVFAIL response.
+		if len(m.Answer) == 0 {
+			return dns.RcodeServerFailure, nil
+		}
+		//  The rcode in the response should be the rcode received from the target lookup. RFC 6604 section 3
+		m.Rcode = dns.RcodeServerFailure
 	}
 
 	w.WriteMsg(m)

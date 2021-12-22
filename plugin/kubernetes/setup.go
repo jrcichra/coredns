@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/coredns/caddy"
@@ -22,7 +23,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"      // pull this in here, because we want it excluded if plugin.cfg doesn't have k8s
 	_ "k8s.io/client-go/plugin/pkg/client/auth/openstack" // pull this in here, because we want it excluded if plugin.cfg doesn't have k8s
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const pluginName = "kubernetes"
@@ -32,6 +33,7 @@ var log = clog.NewWithPlugin(pluginName)
 func init() { plugin.Register(pluginName, setup) }
 
 func setup(c *caddy.Controller) error {
+	// Do not call klog.InitFlags(nil) here.  It will cause reload to panic.
 	klog.SetOutput(os.Stdout)
 
 	k, err := kubernetesParse(c)
@@ -39,12 +41,16 @@ func setup(c *caddy.Controller) error {
 		return plugin.Error(pluginName, err)
 	}
 
-	err = k.InitKubeCache(context.Background())
+	onStart, onShut, err := k.InitKubeCache(context.Background())
 	if err != nil {
 		return plugin.Error(pluginName, err)
 	}
-
-	k.RegisterKubeCache(c)
+	if onStart != nil {
+		c.OnStartup(onStart)
+	}
+	if onShut != nil {
+		c.OnShutdown(onShut)
+	}
 
 	dnsserver.GetConfig(c).AddPlugin(func(next plugin.Handler) plugin.Handler {
 		k.Next = next
@@ -57,31 +63,26 @@ func setup(c *caddy.Controller) error {
 		return nil
 	})
 
-	return nil
-}
-
-// RegisterKubeCache registers KubeCache start and stop functions with Caddy
-func (k *Kubernetes) RegisterKubeCache(c *caddy.Controller) {
+	wildWarner := time.NewTicker(10 * time.Second)
 	c.OnStartup(func() error {
-		go k.APIConn.Run()
-
-		timeout := time.After(5 * time.Second)
-		ticker := time.NewTicker(100 * time.Millisecond)
-		for {
-			select {
-			case <-ticker.C:
-				if k.APIConn.HasSynced() {
-					return nil
+		go func() {
+			for {
+				select {
+				case <-wildWarner.C:
+					if wc := atomic.SwapUint64(&wildCount, 0); wc > 0 {
+						log.Warningf("%d deprecated wildcard queries received. Wildcard queries will no longer be supported in the next minor release.", wc)
+					}
 				}
-			case <-timeout:
-				return nil
 			}
-		}
+		}()
+		return nil
+	})
+	c.OnShutdown(func() error {
+		wildWarner.Stop()
+		return nil
 	})
 
-	c.OnShutdown(func() error {
-		return k.APIConn.Stop()
-	})
+	return nil
 }
 
 func kubernetesParse(c *caddy.Controller) (*Kubernetes, error) {
@@ -113,24 +114,11 @@ func ParseStanza(c *caddy.Controller) (*Kubernetes, error) {
 
 	opts := dnsControlOpts{
 		initEndpointsCache: true,
-		useEndpointSlices:  false,
 		ignoreEmptyService: false,
 	}
 	k8s.opts = opts
 
-	zones := c.RemainingArgs()
-
-	if len(zones) != 0 {
-		k8s.Zones = zones
-		for i := 0; i < len(k8s.Zones); i++ {
-			k8s.Zones[i] = plugin.Host(k8s.Zones[i]).Normalize()
-		}
-	} else {
-		k8s.Zones = make([]string, len(c.ServerBlockKeys))
-		for i := 0; i < len(c.ServerBlockKeys); i++ {
-			k8s.Zones[i] = plugin.Host(c.ServerBlockKeys[i]).Normalize()
-		}
-	}
+	k8s.Zones = plugin.OriginsFromArgsOrServerBlock(c.RemainingArgs(), c.ServerBlockKeys)
 
 	k8s.primaryZoneIndex = -1
 	for i, z := range k8s.Zones {
@@ -253,15 +241,18 @@ func ParseStanza(c *caddy.Controller) (*Kubernetes, error) {
 			}
 		case "kubeconfig":
 			args := c.RemainingArgs()
-			if len(args) == 2 {
-				config := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-					&clientcmd.ClientConfigLoadingRules{ExplicitPath: args[0]},
-					&clientcmd.ConfigOverrides{CurrentContext: args[1]},
-				)
-				k8s.ClientConfig = config
-				continue
+			if len(args) != 1 && len(args) != 2 {
+				return nil, c.ArgErr()
 			}
-			return nil, c.ArgErr()
+			overrides := &clientcmd.ConfigOverrides{}
+			if len(args) == 2 {
+				overrides.CurrentContext = args[1]
+			}
+			config := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+				&clientcmd.ClientConfigLoadingRules{ExplicitPath: args[0]},
+				overrides,
+			)
+			k8s.ClientConfig = config
 		default:
 			return nil, c.Errf("unknown property '%s'", c.Val())
 		}

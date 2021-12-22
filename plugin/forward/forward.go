@@ -14,11 +14,13 @@ import (
 	"github.com/coredns/coredns/plugin"
 	"github.com/coredns/coredns/plugin/debug"
 	"github.com/coredns/coredns/plugin/dnstap"
+	"github.com/coredns/coredns/plugin/metadata"
 	clog "github.com/coredns/coredns/plugin/pkg/log"
 	"github.com/coredns/coredns/request"
 
 	"github.com/miekg/dns"
 	ot "github.com/opentracing/opentracing-go"
+	otext "github.com/opentracing/opentracing-go/ext"
 )
 
 var log = clog.NewWithPlugin("forward")
@@ -119,8 +121,13 @@ func (f *Forward) ServeDNS(ctx context.Context, w dns.ResponseWriter, r *dns.Msg
 
 		if span != nil {
 			child = span.Tracer().StartSpan("connect", ot.ChildOf(span.Context()))
+			otext.PeerAddress.Set(child, proxy.addr)
 			ctx = ot.ContextWithSpan(ctx, child)
 		}
+
+		metadata.SetValueFunc(ctx, "forward/upstream", func() string {
+			return proxy.addr
+		})
 
 		var (
 			ret *dns.Msg

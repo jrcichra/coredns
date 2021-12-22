@@ -1,7 +1,6 @@
 package forward
 
 import (
-	"io/ioutil"
 	"os"
 	"reflect"
 	"strings"
@@ -32,6 +31,7 @@ func TestSetup(t *testing.T) {
 		{"forward . [::1]:53", false, ".", nil, 2, options{hcRecursionDesired: true}, ""},
 		{"forward . [2003::1]:53", false, ".", nil, 2, options{hcRecursionDesired: true}, ""},
 		{"forward . 127.0.0.1 \n", false, ".", nil, 2, options{hcRecursionDesired: true}, ""},
+		{"forward 10.9.3.0/18 127.0.0.1", false, "0.9.10.in-addr.arpa.", nil, 2, options{hcRecursionDesired: true}, ""},
 		// negative
 		{"forward . a27.0.0.1", true, "", nil, 0, options{hcRecursionDesired: true}, "not an IP"},
 		{"forward . 127.0.0.1 {\nblaatl\n}\n", true, "", nil, 0, options{hcRecursionDesired: true}, "unknown property"},
@@ -50,7 +50,7 @@ func TestSetup(t *testing.T) {
 
 		if err != nil {
 			if !test.shouldErr {
-				t.Errorf("Test %d: expected no error but found one for input %s, got: %v", i, test.input, err)
+				t.Fatalf("Test %d: expected no error but found one for input %s, got: %v", i, test.input, err)
 			}
 
 			if !strings.Contains(err.Error(), test.expectedErr) {
@@ -125,7 +125,7 @@ func TestSetupTLS(t *testing.T) {
 
 func TestSetupResolvconf(t *testing.T) {
 	const resolv = "resolv.conf"
-	if err := ioutil.WriteFile(resolv,
+	if err := os.WriteFile(resolv,
 		[]byte(`nameserver 10.10.255.252
 nameserver 10.10.255.253`), 0666); err != nil {
 		t.Fatalf("Failed to write resolv.conf file: %s", err)
