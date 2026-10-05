@@ -1,6 +1,6 @@
 module github.com/coredns/coredns
 
-go 1.17
+go 1.23
 
 require (
 	github.com/Azure/azure-sdk-for-go v62.2.0+incompatible
@@ -20,7 +20,7 @@ require (
 	github.com/openzipkin/zipkin-go v0.4.0
 	github.com/oschwald/geoip2-golang v1.6.1
 	github.com/prometheus/client_golang v1.12.1
-	github.com/prometheus/client_model v0.2.0
+	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.32.1
 	go.etcd.io/etcd/api/v3 v3.5.2
 	go.etcd.io/etcd/client/v3 v3.5.2
@@ -28,7 +28,7 @@ require (
 	golang.org/x/sys v0.0.0-20220227234510-4e6760a101f9
 	google.golang.org/api v0.71.0
 	google.golang.org/grpc v1.45.0
-	google.golang.org/protobuf v1.27.1
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/DataDog/dd-trace-go.v1 v1.37.0
 	k8s.io/api v0.23.4
 	k8s.io/apimachinery v0.23.4
@@ -66,7 +66,7 @@ require (
 	github.com/golang/glog v0.0.0-20160126235308-23def4e6c14b // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
-	github.com/google/go-cmp v0.5.7 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
